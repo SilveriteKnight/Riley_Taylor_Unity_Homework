@@ -11,7 +11,7 @@ namespace UnityStandardAssets.ImageEffects
         public bool  visualizeFocus = false;
         public float focalLength = 10.0f;
         public float focalSize = 0.05f;
-        public float aperture = 0.5f;
+        public float aperture = 11.5f;
         public Transform focalTransform = null;
         public float maxBlurSize = 2.0f;
         public bool  highResolution = false;
@@ -50,7 +50,6 @@ namespace UnityStandardAssets.ImageEffects
         private ComputeBuffer cbPoints;
         private float internalBlurWidth = 1.0f;
 
-        private Camera cachedCamera;
 
         public override bool CheckResources () {
             CheckSupport (true); // only requires depth, not HDR
@@ -68,8 +67,7 @@ namespace UnityStandardAssets.ImageEffects
         }
 
         void OnEnable () {
-            cachedCamera = GetComponent<Camera>();
-            cachedCamera.depthTextureMode |= DepthTextureMode.Depth;
+            GetComponent<Camera>().depthTextureMode |= DepthTextureMode.Depth;
         }
 
         void OnDisable () {
@@ -103,7 +101,7 @@ namespace UnityStandardAssets.ImageEffects
         }
 
         float FocalDistance01 ( float worldDist) {
-            return cachedCamera.WorldToViewportPoint((worldDist-cachedCamera.nearClipPlane) * cachedCamera.transform.forward + cachedCamera.transform.position).z / (cachedCamera.farClipPlane-cachedCamera.nearClipPlane);
+            return GetComponent<Camera>().WorldToViewportPoint((worldDist-GetComponent<Camera>().nearClipPlane) * GetComponent<Camera>().transform.forward + GetComponent<Camera>().transform.position).z / (GetComponent<Camera>().farClipPlane-GetComponent<Camera>().nearClipPlane);
         }
 
         private void WriteCoc ( RenderTexture fromTo, bool fgDilate) {
@@ -159,8 +157,8 @@ namespace UnityStandardAssets.ImageEffects
 
             // focal & coc calculations
 
-            focalDistance01 = (focalTransform) ? (cachedCamera.WorldToViewportPoint (focalTransform.position)).z / (cachedCamera.farClipPlane) : FocalDistance01 (focalLength);
-            dofHdrMaterial.SetVector("_CurveParams", new Vector4(1.0f, focalSize, (1.0f / (1.0f - aperture) - 1.0f), focalDistance01));
+            focalDistance01 = (focalTransform) ? (GetComponent<Camera>().WorldToViewportPoint (focalTransform.position)).z / (GetComponent<Camera>().farClipPlane) : FocalDistance01 (focalLength);
+            dofHdrMaterial.SetVector ("_CurveParams", new Vector4 (1.0f, focalSize, aperture/10.0f, focalDistance01));
 
             // possible render texture helpers
 
@@ -198,8 +196,6 @@ namespace UnityStandardAssets.ImageEffects
                     fgBlurDist = internalBlurWidth * foregroundOverlap;
 
                     rtLow = RenderTexture.GetTemporary (source.width, source.height, 0, source.format);
-
-                    var dest2= RenderTexture.GetTemporary (source.width, source.height, 0, source.format);
 
                     // capture COC
                     WriteCoc (source, false);
@@ -240,16 +236,16 @@ namespace UnityStandardAssets.ImageEffects
                     }
 
                     // NEW: LAY OUT ALPHA on destination target so we get nicer outlines for the high rez version
-                    Graphics.Blit (rtLow, dest2, dofHdrMaterial, 20);
+                    Graphics.Blit (rtLow, destination, dofHdrMaterial, 20);
 
                     // box blur (easier to merge with bokeh buffer)
                     dofHdrMaterial.SetVector ("_Offsets", new Vector4 (internalBlurWidth, 0.0f , 0.0f, internalBlurWidth));
                     Graphics.Blit (rtLow, source, dofHdrMaterial, 5);
                     dofHdrMaterial.SetVector ("_Offsets", new Vector4 (0.0f, internalBlurWidth, 0.0f, internalBlurWidth));
-                    Graphics.Blit (source, dest2, dofHdrMaterial, 21);
+                    Graphics.Blit (source, destination, dofHdrMaterial, 21);
 
                     // apply bokeh candidates
-                    Graphics.SetRenderTarget (dest2);
+                    Graphics.SetRenderTarget (destination);
                     ComputeBuffer.CopyCount (cbPoints, cbDrawArgs, 0);
                     dx11bokehMaterial.SetBuffer ("pointBuffer", cbPoints);
                     dx11bokehMaterial.SetTexture ("_MainTex", dx11BokehTexture);
@@ -258,9 +254,6 @@ namespace UnityStandardAssets.ImageEffects
 
                     Graphics.DrawProceduralIndirect (MeshTopology.Points, cbDrawArgs, 0);
 
-                    Graphics.Blit (dest2, destination);	// hackaround for DX11 high resolution flipfun (OPTIMIZEME)
-
-                    RenderTexture.ReleaseTemporary(dest2);
                     RenderTexture.ReleaseTemporary(rtSuperLow1);
                     RenderTexture.ReleaseTemporary(rtSuperLow2);
                 }
